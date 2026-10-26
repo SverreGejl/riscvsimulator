@@ -1,5 +1,4 @@
 class importCode:
-
     def __init__(self,path):
         self.path = path
 
@@ -30,10 +29,21 @@ class instruction:
         self.valA = code[8:10]
         self.valB = code[10:12]
 
-class CPU:
+class registerFile:
     def __init__(self):
-        codeImporter = importCode()
         self.registers = [0 for i in range(32)]
+
+    def setRegister(self,idx,val):
+        self.registers[idx] = val
+
+    def getRegister(self,idx):
+        return self.registers[idx]
+
+class CPU:
+    def __init__(self,path):
+        codeImporter = importCode(path)
+        self.registers = registerFile()
+        self.memory = memory(1024*1024)
         self.instructions = codeImporter.extractCode()
         self.pc = 0
 
@@ -47,5 +57,6 @@ class CPU:
     def printRegisters(self):
         pass
 
-cpu = CPU()
+cpu = CPU("./testcode.asm")
 cpu.start()
+cpu.printRegisters()
