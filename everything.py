@@ -39,6 +39,10 @@ class registerFile:
     def getRegister(self,idx):
         return self.registers[idx]
 
+    def printRegisters(self):
+        for i in range(32):
+            print(i, self.registers[i])
+
 class CPU:
     def __init__(self,path):
         codeImporter = importCode(path)
@@ -55,7 +59,7 @@ class CPU:
             self.executeInstruction(self.pc)
 
     def printRegisters(self):
-        pass
+        self.registers.printRegisters()
 
 cpu = CPU("./testcode.asm")
 cpu.start()
