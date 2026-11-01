@@ -4,10 +4,16 @@ class importCode:
 
     def extractCode(self):
         instructions = []
-        #FIX THIS SHIT
-        with open(self.path,'r') as f:
-            code = f.read()
-            instructions.append(instruction(code))
+
+        # Read binary file bite wise 
+        with open(self.path,'rb') as f:
+            data = f.read()
+
+        # 32bit = 4 Byte: select 4 bytes at a time
+        for i in range(0, len(data), 4):
+            chunk = data[i:i+4] # 4 bytes at a time 
+            word = int.from_bytes(chunk, byteorder='little') #little-endian machine
+            instructions.append(word) 
         return instructions
 
 class memory:
@@ -49,7 +55,15 @@ class CPU:
         self.registers = registerFile()
         self.memory = memory(1024*1024)
         self.instructions = codeImporter.extractCode()
+        self.loadIntoMemory() # puttinh instructions into memory starting at address 0
         self.pc = 0
+
+    def loadIntoMemory(self): # added this as well, as the instructions are not loaded into memory yet but should be (Simon)
+        # Store each 32-bit word as 4 separate bytes in memory
+        for n, word in enumerate(self.instructions): # loop through instructions n=index, word=instruction
+            for b in range(4): # loop through each byte of the word
+                byte = (word >> (8 * b)) & 0xFF   # pick out bits of one byte of the word
+                self.memory.setAdress(4 * n + b, byte) # put byte into memory at the correct address
 
     def executeInstruction(self,task : instruction):
         self.pc += 4
@@ -61,6 +75,6 @@ class CPU:
     def printRegisters(self):
         self.registers.printRegisters()
 
-cpu = CPU("./testcode.asm")
+cpu = CPU("./testcode.asm") # should be a binary file i guess? (Simon)
 cpu.start()
 cpu.printRegisters()
