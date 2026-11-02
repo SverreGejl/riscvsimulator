@@ -55,15 +55,8 @@ class CPU:
         self.registers = registerFile()
         self.memory = memory(1024*1024)
         self.instructions = codeImporter.extractCode()
-        self.loadIntoMemory() # puttinh instructions into memory starting at address 0
         self.pc = 0
 
-    def loadIntoMemory(self): # added this as well, as the instructions are not loaded into memory yet but should be (Simon)
-        # Store each 32-bit word as 4 separate bytes in memory
-        for n, word in enumerate(self.instructions): # loop through instructions n=index, word=instruction
-            for b in range(4): # loop through each byte of the word
-                byte = (word >> (8 * b)) & 0xFF   # pick out bits of one byte of the word
-                self.memory.setAdress(4 * n + b, byte) # put byte into memory at the correct address
 
     def executeInstruction(self,task : instruction):
         self.pc += 4
