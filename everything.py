@@ -4,10 +4,16 @@ class importCode:
 
     def extractCode(self):
         instructions = []
-        #FIX THIS SHIT
-        with open(self.path,'r') as f:
-            code = f.read()
-            instructions.append(instruction(code))
+
+        # Read binary file bite wise 
+        with open(self.path,'rb') as f:
+            data = f.read()
+
+        # 32bit = 4 Byte: select 4 bytes at a time
+        for i in range(0, len(data), 4):
+            chunk = data[i:i+4] # 4 bytes at a time 
+            word = int.from_bytes(chunk, byteorder='little') #little-endian machine
+            instructions.append(word) 
         return instructions
 
 class memory:
@@ -51,6 +57,7 @@ class CPU:
         self.instructions = codeImporter.extractCode()
         self.pc = 0
 
+
     def executeInstruction(self,task : instruction):
         self.pc += 4
 
@@ -61,6 +68,6 @@ class CPU:
     def printRegisters(self):
         self.registers.printRegisters()
 
-cpu = CPU("./testcode.asm")
+cpu = CPU("./testcode.asm") # should be a binary file i guess? (Simon)
 cpu.start()
 cpu.printRegisters()
