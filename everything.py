@@ -1,3 +1,5 @@
+from instructionType import typeByOpcode, IType
+
 class importCode:
     def __init__(self,path):
         self.path = path
@@ -26,15 +28,6 @@ class memory:
     def setAdress(self,address, val):
         self.memory[address] = val
 
-class instruction:
-    def __init__(self,code):
-        #FIX THIS SHIT
-        self.opcode = code[1:2]
-        self.regA = code[2:4]
-        self.regB = code[4:6]
-        self.valA = code[8:10]
-        self.valB = code[10:12]
-
 class registerFile:
     def __init__(self):
         self.registers = [0 for i in range(32)]
@@ -49,25 +42,48 @@ class registerFile:
         for i in range(32):
             print(i, self.registers[i])
 
+
+class codeExecuter:
+    #TODO: Mark needs to make a huge switch statement here :))))
+    def executeInstruction(self, instruction: typeByOpcode):
+        match instruction:
+            case IType(opcode=0x73, rd=0, funct3=0, rs1=0, imm=0): #ECALL
+                return True
+            case _ :
+                return False
+
+
 class CPU:
     def __init__(self,path):
         codeImporter = importCode(path)
         self.registers = registerFile()
         self.memory = memory(1024*1024)
         self.instructions = codeImporter.extractCode()
+        self.running = False
+        self.executer = codeExecuter()
         self.pc = 0
 
+    def executeInstruction(self,instruction):
+        typeOfInstruction = self.getTypeOfInstructions(instruction)
+        stopInstruction = self.executer.executeInstruction(typeOfInstruction)
+        if not stopInstruction:
+            self.pc += 4
+        else:
+            self.running = False
 
-    def executeInstruction(self,task : instruction):
-        self.pc += 4
+    def getTypeOfInstructions(self, instruction):
+        opcode = instruction & 0x7f
+        if opcode in typeByOpcode:
+            instructionClass = typeByOpcode[opcode]
+            return instructionClass(instruction)
+        else:
+            raise ValueError(f"Unknown opcode {opcode:b} in instruction {instruction:x}")
 
     def start(self):
-        while self.pc < 4*(len(self.instructions)-1):
-            self.executeInstruction(self.pc)
+        self.running = True
+        while self.running:
+            instructionIndex = int(self.pc/4)
+            self.executeInstruction(self.instructions[instructionIndex])
 
     def printRegisters(self):
         self.registers.printRegisters()
-
-cpu = CPU("./testcode.asm") # should be a binary file i guess? (Simon)
-cpu.start()
-cpu.printRegisters()
