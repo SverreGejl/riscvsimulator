@@ -1,4 +1,16 @@
-from instructionType import typeByOpcode, IType
+from instructionType import typeByOpcode, RType, IType, SType, SBType, UType, UJType
+
+regSize = 1<<32
+adressSize = 1<<8
+
+def signed(val, bits):
+    return (val & ((1 << (bits - 1))-1)) - (val&(1<<(bits-1)))
+
+def signExtend(val, bit, length):
+    if val&(1<<(bit-1)): #Negative
+        return val | ((1<<(length-bit))-1)<<bit
+    else:
+        return val
 
 class importCode:
     def __init__(self,path):
@@ -7,7 +19,7 @@ class importCode:
     def extractCode(self):
         instructions = []
 
-        # Read binary file bite wise 
+        # Read binary file bite wise
         with open(self.path,'rb') as f:
             data = f.read()
 
@@ -20,38 +32,203 @@ class importCode:
 
 class memory:
     def __init__(self,size):
-        self.memory = [0 for i in range(size)]
+        self.size = size
+        self.memory = [0 for i in range(self.size)]
 
     def getAdress(self,address):
-        return self.memory[address]
+        return self.memory[address] % adressSize
 
     def setAdress(self,address, val):
-        self.memory[address] = val
+        self.memory[address] = val % adressSize
+
+    def getSize(self):
+        return self.size
 
 class registerFile:
     def __init__(self):
         self.registers = [0 for i in range(32)]
 
     def setRegister(self,idx,val):
-        self.registers[idx] = val
+        if (idx>0): #Don't overwrite the x0 register
+            self.registers[idx] = val
 
     def getRegister(self,idx):
         return self.registers[idx]
 
     def printRegisters(self):
+        print("Registers: ")
         for i in range(32):
             print(i, self.registers[i])
 
-
+#Everything was implemented following this overview here: https://lhtin.github.io/01world/app/riscv-isa/?xlen=32
 class codeExecuter:
-    #TODO: Mark needs to make a huge switch statement here :))))
-    def executeInstruction(self, instruction: typeByOpcode):
+    def executeInstruction(self, instruction: typeByOpcode, cpu):
         match instruction:
-            case IType(opcode=0x73, rd=0, funct3=0, rs1=0, imm=0): #ECALL
-                return True
-            case _ :
+            #End of program
+            case IType(opcode=0b1110011, funct3=0b000, imm=0):  # ECALL
+                if (cpu.getRegister(17) == 10): #a7 == 10
+                    return True #Just end program
+                else:
+                    cpu.setPC(cpu.getPC() + 4)
+                    return False
+
+            #Upper instructions
+            case UType(opcode=0b0110111): #LUI
+                cpu.setRegister(instruction.rd, instruction.imm<<12)
+                cpu.setPC(cpu.getPC() + 4)
+                return False
+            case UType(opcode=0b0010111): #AUIPC
+                cpu.setRegister(instruction.rd, (instruction.imm<<12)+cpu.getPC())
+                cpu.setPC(cpu.getPC() + 4)
                 return False
 
+            #Jumps
+            case UJType(opcode=0b1101111): #JAL
+                targetPC = signExtend(instruction.imm<<1, 21, 32) + cpu.getPC()
+                cpu.setRegister(instruction.rd, cpu.getPC() + 4)
+                cpu.setPC(targetPC) #It sets the pc in offsets of 2 bytes, hence << 1
+                return False
+            case IType(opcode=0b1100111, funct3=0b000): #JALR
+                targetPC = (signExtend(instruction.imm, 12, 32) + cpu.getRegister(instruction.rs1)) & ~1
+                cpu.setRegister(instruction.rd, cpu.getPC() + 4)
+                cpu.setPC(targetPC)
+                return False
+
+            #Branches
+            case SBType(opcode=0b1100011, funct3=0b000): #BEQ
+                cpu.setPC(cpu.getPC() + (signExtend(instruction.imm<<1, 13, 32)) if cpu.getRegister(instruction.rs1) == cpu.getRegister(instruction.rs2) else cpu.getPC() + 4)
+                return False
+            case SBType(opcode=0b1100011, funct3=0b001): #BNE
+                cpu.setPC(cpu.getPC() + (signExtend(instruction.imm<<1, 13, 32)) if cpu.getRegister(instruction.rs1) != cpu.getRegister(instruction.rs2) else cpu.getPC() + 4)
+                return False
+            case SBType(opcode=0b1100011, funct3=0b100): #BLT
+                cpu.setPC(cpu.getPC() + (signExtend(instruction.imm<<1, 13, 32)) if signed(cpu.getRegister(instruction.rs1), 32) < signed(cpu.getRegister(instruction.rs2), 32) else cpu.getPC() + 4)
+                return False
+            case SBType(opcode=0b1100011, funct3=0b110): #BLTU
+                cpu.setPC(cpu.getPC() + (signExtend(instruction.imm<<1, 13, 32)) if cpu.getRegister(instruction.rs1) < cpu.getRegister(instruction.rs2) else cpu.getPC() + 4)
+                return False
+            case SBType(opcode=0b1100011, funct3=0b101): #BGE
+                cpu.setPC(cpu.getPC() + (signExtend(instruction.imm<<1, 13, 32)) if signed(cpu.getRegister(instruction.rs1), 32) >= signed(cpu.getRegister(instruction.rs2), 32) else cpu.getPC() + 4)
+                return False
+            case SBType(opcode=0b1100011, funct3=0b111): #BGEU
+                cpu.setPC(cpu.getPC() + (signExtend(instruction.imm<<1, 13, 32)) if cpu.getRegister(instruction.rs1) >= cpu.getRegister(instruction.rs2) else cpu.getPC() + 4)
+                return False
+
+            #Loads
+            case IType(opcode=0b0000011, funct3=0b000): #LB
+                cpu.setRegister(instruction.rd, signExtend(cpu.getMemory(cpu.getRegister(instruction.rs1) + signExtend(instruction.imm, 12, 32),1), 8,32))
+                cpu.setPC(cpu.getPC() + 4)
+                return False
+            case IType(opcode=0b0000011, funct3=0b001): #LH
+                cpu.setRegister(instruction.rd, signExtend(cpu.getMemory(cpu.getRegister(instruction.rs1) + signExtend(instruction.imm, 12, 32),2), 16,32))
+                cpu.setPC(cpu.getPC() + 4)
+                return False
+            case IType(opcode=0b0000011, funct3=0b010): #LW
+                cpu.setRegister(instruction.rd, cpu.getMemory(cpu.getRegister(instruction.rs1) + signExtend(instruction.imm, 12, 32),4))
+                cpu.setPC(cpu.getPC() + 4)
+                return False
+            case IType(opcode=0b0000011, funct3=0b100): #LBU
+                cpu.setRegister(instruction.rd, cpu.getMemory(cpu.getRegister(instruction.rs1) + signExtend(instruction.imm, 12, 32),1))
+                cpu.setPC(cpu.getPC() + 4)
+                return False
+            case IType(opcode=0b0000011, funct3=0b101): #LHU
+                cpu.setRegister(instruction.rd, cpu.getMemory(cpu.getRegister(instruction.rs1) + signExtend(instruction.imm, 12, 32),2))
+                cpu.setPC(cpu.getPC() + 4)
+                return False
+
+            #Stores
+            case SType(opcode=0b0100011, funct3=0b000): #SB
+                cpu.setMemory(cpu.getRegister(instruction.rs1) + signExtend(instruction.imm, 12, 32), cpu.getRegister(instruction.rs2), 1)
+                cpu.setPC(cpu.getPC() + 4)
+                return False
+            case SType(opcode=0b0100011, funct3=0b001): #SH
+                cpu.setMemory(cpu.getRegister(instruction.rs1) + signExtend(instruction.imm, 12, 32), cpu.getRegister(instruction.rs2), 2)
+                cpu.setPC(cpu.getPC() + 4)
+                return False
+            case SType(opcode=0b0100011, funct3=0b010): #SW
+                cpu.setMemory(cpu.getRegister(instruction.rs1) + signExtend(instruction.imm, 12, 32), cpu.getRegister(instruction.rs2), 4)
+                cpu.setPC(cpu.getPC() + 4)
+                return False
+
+            #Immediates
+            case IType(opcode=0b0010011, funct3=0b000): #ADDI
+                cpu.setRegister(instruction.rd, cpu.getRegister(instruction.rs1) + signExtend(instruction.imm,12,32))
+                cpu.setPC(cpu.getPC() + 4)
+                return False
+            case IType(opcode=0b0010011, funct3=0b010): #SLTI
+                cpu.setRegister(instruction.rd, 1 if signed(cpu.getRegister(instruction.rs1),32) < signed(signExtend(instruction.imm, 12, 32),32) else 0)
+                cpu.setPC(cpu.getPC() + 4)
+                return False
+            case IType(opcode=0b0010011, funct3=0b011): #SLTIU
+                cpu.setRegister(instruction.rd, 1 if cpu.getRegister(instruction.rs1) < signExtend(instruction.imm, 12, 32) else 0)
+                cpu.setPC(cpu.getPC() + 4)
+                return False
+            case IType(opcode=0b0010011, funct3=0b100): #XORI
+                cpu.setRegister(instruction.rd, cpu.getRegister(instruction.rs1) ^ signExtend(instruction.imm,12,32))
+                cpu.setPC(cpu.getPC() + 4)
+                return False
+            case IType(opcode=0b0010011, funct3=0b110): #ORI
+                cpu.setRegister(instruction.rd, cpu.getRegister(instruction.rs1) | signExtend(instruction.imm, 12, 32))
+                cpu.setPC(cpu.getPC() + 4)
+                return False
+            case IType(opcode=0b0010011, funct3=0b111): #ANDI
+                cpu.setRegister(instruction.rd, cpu.getRegister(instruction.rs1) & signExtend(instruction.imm, 12, 32))
+                cpu.setPC(cpu.getPC() + 4)
+                return False
+            case IType(opcode=0b0010011, funct3=0b001): #SLLI
+                cpu.setRegister(instruction.rd, cpu.getRegister(instruction.rs1) << (instruction.imm%32))
+                cpu.setPC(cpu.getPC() + 4)
+                return False
+            case IType(opcode=0b0010011, funct3=0b101) if (instruction.imm >> 5) == 0b0000000: #SRLI
+                cpu.setRegister(instruction.rd, cpu.getRegister(instruction.rs1) >> (instruction.imm%32))
+                cpu.setPC(cpu.getPC() + 4)
+                return False
+            case IType(opcode=0b0010011, funct3=0b101) if (instruction.imm >> 5) == 0b0100000: #SRAI
+                cpu.setRegister(instruction.rd, signed(cpu.getRegister(instruction.rs1), 32) >> (instruction.imm%32))
+                cpu.setPC(cpu.getPC() + 4)
+                return False
+
+            #Arithmetic
+            case RType(opcode=0b0110011, funct3=0b000, funct7=0b0000000): #ADD
+                cpu.setRegister(instruction.rd, cpu.getRegister(instruction.rs1) + cpu.getRegister(instruction.rs2))
+                cpu.setPC(cpu.getPC() + 4)
+                return False
+            case RType(opcode=0b0110011, funct3=0b000, funct7=0b0100000): #SUB
+                cpu.setRegister(instruction.rd, cpu.getRegister(instruction.rs1) - cpu.getRegister(instruction.rs2))
+                cpu.setPC(cpu.getPC() + 4)
+                return False
+            case RType(opcode=0b0110011, funct3=0b001, funct7=0b0000000): #SLL
+                cpu.setRegister(instruction.rd, cpu.getRegister(instruction.rs1) << (cpu.getRegister(instruction.rs2)%32))
+                cpu.setPC(cpu.getPC() + 4)
+                return False
+            case RType(opcode=0b0110011, funct3=0b010, funct7=0b0000000): #SLT
+                cpu.setRegister(instruction.rd, 1 if signed(cpu.getRegister(instruction.rs1),32) < signed(cpu.getRegister(instruction.rs2),32) else 0)
+                cpu.setPC(cpu.getPC() + 4)
+                return False
+            case RType(opcode=0b0110011, funct3=0b011, funct7=0b0000000): #SLTU
+                cpu.setRegister(instruction.rd, 1 if cpu.getRegister(instruction.rs1) < cpu.getRegister(instruction.rs2) else 0)
+                cpu.setPC(cpu.getPC() + 4)
+                return False
+            case RType(opcode=0b0110011, funct3=0b100, funct7=0b0000000): #XOR
+                cpu.setRegister(instruction.rd, cpu.getRegister(instruction.rs1) ^ cpu.getRegister(instruction.rs2))
+                cpu.setPC(cpu.getPC() + 4)
+                return False
+            case RType(opcode=0b0110011, funct3=0b101, funct7=0b0000000): #SRL
+                cpu.setRegister(instruction.rd, cpu.getRegister(instruction.rs1) >> (cpu.getRegister(instruction.rs2)%32))
+                cpu.setPC(cpu.getPC() + 4)
+                return False
+            case RType(opcode=0b0110011, funct3=0b101, funct7=0b0100000): #SRA
+                cpu.setRegister(instruction.rd, signed(cpu.getRegister(instruction.rs1), 32) >> (cpu.getRegister(instruction.rs2)%32))
+                cpu.setPC(cpu.getPC() + 4)
+                return False
+            case RType(opcode=0b0110011, funct3=0b110, funct7=0b0000000): #OR
+                cpu.setRegister(instruction.rd, cpu.getRegister(instruction.rs1) | cpu.getRegister(instruction.rs2))
+                cpu.setPC(cpu.getPC() + 4)
+                return False
+            case RType(opcode=0b0110011, funct3=0b111, funct7=0b0000000): #AND
+                cpu.setRegister(instruction.rd, cpu.getRegister(instruction.rs1) & cpu.getRegister(instruction.rs2))
+                cpu.setPC(cpu.getPC() + 4)
+                return False
 
 class CPU:
     def __init__(self,path):
@@ -59,16 +236,33 @@ class CPU:
         self.registers = registerFile()
         self.memory = memory(1024*1024)
         self.instructions = codeImporter.extractCode()
+        self.loadIntoMemory()
         self.running = False
         self.executer = codeExecuter()
         self.pc = 0
 
+    def loadIntoMemory(self):
+        for n, word in enumerate(self.instructions):
+            for b in range(4):
+                byte = (word >> (8 * b)) & 0xFF
+                self.memory.setAdress(4 * n + b, byte)
+
+    def setRegister(self, rd, val):
+        self.registers.setRegister(rd, val%regSize)
+
+    def getRegister(self, rd):
+        return self.registers.getRegister(rd)
+
+    def getPC(self):
+        return self.pc
+
+    def setPC(self, pc):
+        self.pc = (pc%regSize)
+
     def executeInstruction(self,instruction):
         typeOfInstruction = self.getTypeOfInstructions(instruction)
-        stopInstruction = self.executer.executeInstruction(typeOfInstruction)
-        if not stopInstruction:
-            self.pc += 4
-        else:
+        stopInstruction = self.executer.executeInstruction(typeOfInstruction, self)
+        if stopInstruction:
             self.running = False
 
     def getTypeOfInstructions(self, instruction):
@@ -83,7 +277,20 @@ class CPU:
         self.running = True
         while self.running:
             instructionIndex = int(self.pc/4)
-            self.executeInstruction(self.instructions[instructionIndex])
+            self.executeInstruction(self.memory.getAdress(instructionIndex))
 
     def printRegisters(self):
         self.registers.printRegisters()
+
+    def getMemory(self, adress, bytes):
+        val = 0
+        for i in reversed(range(bytes)):
+            val = (val << 8) | (self.memory.getAdress((adress + i) % self.memory.getSize()))
+        return val
+
+    def setMemory(self, adress, value, bytes):
+        adress = adress % self.memory.getSize() #Wrap adresses because tests set sp to 4GB, outside of 1MB
+        for i in range(bytes):
+            self.memory.setAdress(adress, value%256)
+            value = value >> 8
+            adress += 1
