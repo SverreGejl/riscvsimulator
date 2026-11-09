@@ -66,7 +66,7 @@ class codeExecuter:
         match instruction:
             #End of program
             case IType(opcode=0b1110011, funct3=0b000, imm=0):  # ECALL
-                if (cpu.getRegister(17) == 10): #a7 == 10
+                if cpu.getRegister(10) == 10 or cpu.getRegister(17) == 10: #a0 == 10 or a7 == 10
                     return True #Just end program
                 else:
                     cpu.setPC(cpu.getPC() + 4)
@@ -230,22 +230,22 @@ class codeExecuter:
                 cpu.setPC(cpu.getPC() + 4)
                 return False
 
+            case _:
+                raise ValueError(f"Unsupported instruction {instruction!r} at pc 0x{cpu.getPC():x}")
+
 class CPU:
     def __init__(self,path):
         codeImporter = importCode(path)
         self.registers = registerFile()
         self.memory = memory(1024*1024)
-        self.instructions = codeImporter.extractCode()
-        self.loadIntoMemory()
+        self.loadIntoMemory(codeImporter.extractCode())
         self.running = False
         self.executer = codeExecuter()
         self.pc = 0
 
-    def loadIntoMemory(self):
-        for n, word in enumerate(self.instructions):
-            for b in range(4):
-                byte = (word >> (8 * b)) & 0xFF
-                self.memory.setAdress(4 * n + b, byte)
+    def loadIntoMemory(self, instructions):
+        for n, word in enumerate(instructions):
+            self.setMemory(4*n, word, 4)
 
     def setRegister(self, rd, val):
         self.registers.setRegister(rd, val%regSize)
@@ -276,8 +276,7 @@ class CPU:
     def start(self):
         self.running = True
         while self.running:
-            instructionIndex = int(self.pc/4)
-            self.executeInstruction(self.memory.getAdress(instructionIndex))
+            self.executeInstruction(self.getMemory(self.pc,4))
 
     def printRegisters(self):
         self.registers.printRegisters()
@@ -291,6 +290,6 @@ class CPU:
     def setMemory(self, adress, value, bytes):
         adress = adress % self.memory.getSize() #Wrap adresses because tests set sp to 4GB, outside of 1MB
         for i in range(bytes):
-            self.memory.setAdress(adress, value%256)
+            self.memory.setAdress(adress, value)
             value = value >> 8
             adress += 1
