@@ -282,14 +282,15 @@ class CPU:
         self.registers.printRegisters()
 
     def getMemory(self, adress, bytes):
+        adress = adress % regSize
         val = 0
         for i in reversed(range(bytes)):
-            val = (val << 8) | (self.memory.getAdress((adress + i) % self.memory.getSize()))
+            val = (val << 8) | (self.memory.getAdress((adress + i)))
         return val
 
     def setMemory(self, adress, value, bytes):
-        adress = adress % self.memory.getSize() #Wrap adresses because tests set sp to 4GB, outside of 1MB
+        adress = adress % regSize
         for i in range(bytes):
-            self.memory.setAdress(adress, value)
+            self.memory.setAdress(adress, value) #Only sets the last 8 bits (%256)
             value = value >> 8
             adress += 1
