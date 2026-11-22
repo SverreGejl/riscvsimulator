@@ -1,7 +1,3 @@
-# Instruction formats from the RV32I base instruction set table
-def signExtend(val, bits):
-    return val - (1 << bits) if val & (1 << (bits - 1)) else val
-
 def bits(word, hi, lo):
     return (word >> lo) & ((1 << (hi - lo + 1)) - 1)
 
@@ -20,7 +16,7 @@ class IType:
         self.rd = bits(word, 11, 7)
         self.funct3 = bits(word, 14, 12)
         self.rs1 = bits(word, 19, 15)
-        self.imm = signExtend(bits(word, 31, 20), 12)
+        self.imm = bits(word, 31, 20)
 
 class SType:
     def __init__(self, word):
@@ -28,7 +24,7 @@ class SType:
         self.funct3 = bits(word, 14, 12)
         self.rs1 = bits(word, 19, 15)
         self.rs2 = bits(word, 24, 20)
-        self.imm = signExtend(bits(word, 31, 25) << 5 | bits(word, 11, 7), 12)
+        self.imm = bits(word, 31, 25) << 5 | bits(word, 11, 7)
 
 class SBType:
     def __init__(self, word):
@@ -36,23 +32,21 @@ class SBType:
         self.funct3 = bits(word, 14, 12)
         self.rs1 = bits(word, 19, 15)
         self.rs2 = bits(word, 24, 20)
-        imm = (bits(word, 31, 31) << 12 | bits(word, 7, 7) << 11
-               | bits(word, 30, 25) << 5 | bits(word, 11, 8) << 1)
-        self.imm = signExtend(imm, 13)
+        self.imm = (bits(word, 31, 31) << 11 | bits(word, 7, 7) << 10
+                    | bits(word, 30, 25) << 4 | bits(word, 11, 8))
 
 class UType:
     def __init__(self, word):
         self.opcode = bits(word, 6, 0)
         self.rd = bits(word, 11, 7)
-        self.imm = signExtend(bits(word, 31, 12) << 12, 32)
+        self.imm = bits(word, 31, 12)
 
 class UJType:
     def __init__(self, word):
         self.opcode = bits(word, 6, 0)
         self.rd = bits(word, 11, 7)
-        imm = (bits(word, 31, 31) << 20 | bits(word, 19, 12) << 12
-               | bits(word, 20, 20) << 11 | bits(word, 30, 21) << 1)
-        self.imm = signExtend(imm, 21)
+        self.imm = (bits(word, 31, 31) << 19 | bits(word, 19, 12) << 11
+                    | bits(word, 20, 20) << 10 | bits(word, 30, 21))
 
 typeByOpcode = {
     0b0110011: RType,   # ADD, SUB, ...
