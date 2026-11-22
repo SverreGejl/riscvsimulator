@@ -103,5 +103,17 @@ for _bin in sorted(TESTS_DIR.glob("*/*.bin")):
     if _bin.with_suffix(".res").exists():
         setattr(ProgramTests, f"test_{_bin.parent.name}_{_bin.stem}", _make_test(_bin))
 
+
+# ---------- out-of-range memory (no .res, so not picked up above) ----------
+
+class MemoryBoundsTests(unittest.TestCase):
+    def test_read_out_of_range(self):
+        with self.assertRaisesRegex(ValueError, "read memory"):
+            run_program(TESTS_DIR / "memory" / "read_oob.bin")
+
+    def test_write_out_of_range(self):
+        with self.assertRaisesRegex(ValueError, "write memory"):
+            run_program(TESTS_DIR / "memory" / "write_oob.bin")
+
 if __name__ == "__main__":
     unittest.main()

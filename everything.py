@@ -36,10 +36,16 @@ class memory:
         self.memory = [0 for i in range(self.size)]
 
     def getAdress(self,address):
-        return self.memory[address] % adressSize
+        try:
+            return self.memory[address] % adressSize
+        except IndexError:
+            raise ValueError(f"The program is trying to read memory at {address} which is out of range")
 
     def setAdress(self,address, val):
-        self.memory[address] = val % adressSize
+        try:
+            self.memory[address] = val % adressSize
+        except IndexError:
+            raise ValueError(f"The program is trying to write memory at {address} which is out of range")
 
     def getSize(self):
         return self.size
